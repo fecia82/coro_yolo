@@ -1,5 +1,8 @@
 # Coronary Stenosis Automatic Detection with YOLO
 
+![image](https://github.com/user-attachments/assets/913c7bfc-b938-4b21-851a-781dcaefc548)
+
+
 Welcome to the **Coronary Stenosis Detection Project**! This project is a playful experiment in machine learning, driven by a cardiologist's curiosity (that's me!) to explore how computer vision can be applied in coronary imaging. Please remember, I'm an interventional cardiologist—not a computer vision expert. So, this is just for fun, learning, and maybe a little bit of usefulness!
 
 ## Overview
@@ -46,6 +49,7 @@ While these numbers might not blow you away, let's keep in mind:
 
 4. **Upload an Image or Choose a Sample**:  
    Use the app to upload your own coronary angiogram image or select one of the provided sample images to see the model in action.
+
 
 ## Future Improvements
 - **Better Metrics**: As mentioned, this is more of an experiment. With some tweaks and better data, it would be exciting to see what kind of metrics we could achieve.
