@@ -1,9 +1,3 @@
-
----
-
-## Complete Streamlit Application Code (`app.py`)
-
-```python
 import streamlit as st
 import cv2
 import numpy as np
@@ -45,7 +39,7 @@ st.sidebar.header("Configuration")
 threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.3, 0.05)
 
 # Slider for stenosis mask transparency
-transparency_stenosis = st.sidebar.slider("Stenosis Mask Transparency", 0.0, 1.0, 0.4, 0.05)
+transparency_stenosis = st.sidebar.slider("Stenosis Mask Transparency", 0.0, 1.0, 0.25, 0.05)
 
 # Slider for segment contours transparency
 transparency_segments = st.sidebar.slider("Segment Contours Transparency", 0.0, 1.0, 0.3, 0.05)
