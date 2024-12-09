@@ -4,50 +4,44 @@ import numpy as np
 import os
 from PIL import Image
 from ultralytics import YOLO
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
+from io import BytesIO
 import itertools
 
 # Page configuration
-st.set_page_config(page_title="Coronary Stenosis Detection and Segmentation App", layout="wide")
+st.set_page_config(page_title="Coronary stenosis automatic detection (YOLO)", layout="wide")
 
-# Indicator that options are in the sidebar
+# Add an indication that the options are in the sidebar
 st.markdown(
     "<p style='text-align: center; font-size: 12px; color: gray;'>Options are available in the sidebar.</p>",
     unsafe_allow_html=True
 )
 
-# Load YOLO models once at the start
+# Load the YOLO model once at the start
 @st.cache_resource
-def load_models():
-    model_stenosis_path = "model.pt"  # Stenosis detection model
-    model_segments_path = "model_s.pt"  # Segments identification model
-    if not os.path.exists(model_stenosis_path):
-        st.error(f"Stenosis model not found at the specified path: {model_stenosis_path}")
+def load_model():
+    model_path = "model.pt"  # Make sure the model is in the same directory or provide the correct path
+    if not os.path.exists(model_path):
+        st.error(f"The model was not found at the specified path: {model_path}")
         st.stop()
-    if not os.path.exists(model_segments_path):
-        st.error(f"Segments model not found at the specified path: {model_segments_path}")
-        st.stop()
-    model_stenosis = YOLO(model_stenosis_path)
-    model_segments = YOLO(model_segments_path)
-    return model_stenosis, model_segments
+    return YOLO(model_path)
 
-model_stenosis, model_segments = load_models()
+model = load_model()
 
 # Sidebar for controls
-st.sidebar.header("Configuration")
+st.sidebar.header("Settings")
 
 # Slider for confidence threshold
 threshold = st.sidebar.slider("Confidence Threshold", 0.0, 1.0, 0.3, 0.05)
 
-# Slider for stenosis mask transparency
-transparency_stenosis = st.sidebar.slider("Stenosis Mask Transparency", 0.0, 1.0, 0.25, 0.05)
-
-# Slider for segment contours transparency
-transparency_segments = st.sidebar.slider("Segment Contours Transparency", 0.0, 1.0, 0.3, 0.05)
+# Slider for mask transparency
+transparency = st.sidebar.slider("Mask Transparency", 0.0, 1.0, 0.2, 0.05)
 
 # Function to load test images
 def load_test_images():
     test_images = {}
-    test_image_names = ["1.png", "2.png", "3.png"]  # Ensure these are PNG files
+    test_image_names = ["1.png", "2.png", "3.png"]  # Ensure they are PNG
     for img_name in test_image_names:
         if os.path.exists(img_name):
             image = Image.open(img_name).convert("RGB")
@@ -60,16 +54,16 @@ def load_test_images():
 def select_test_image(img_name):
     st.session_state['selected_test_image'] = img_name
 
-# Initialize selected image state
+# Initialize the selected image state
 if 'selected_test_image' not in st.session_state:
     st.session_state['selected_test_image'] = None
 
 # Main section: Upload an image or select a test image
 
 # Option to upload an image
-uploaded_file = st.file_uploader("Upload Your Own Image", type=["png", "jpg", "jpeg"])
+uploaded_file = st.file_uploader("Upload your own image", type=["png", "jpg", "jpeg"])
 
-# Variable to store the image to process
+# Variable to store the image to be processed
 image_to_process = None
 
 if uploaded_file is not None:
@@ -83,54 +77,25 @@ elif st.session_state['selected_test_image'] is not None:
     image_np = np.array(selected_image)
     image_to_process = selected_image
 
-# Show test images only if no image is uploaded or selected
+# Display test images only if no image has been uploaded or selected
 if uploaded_file is None and st.session_state['selected_test_image'] is None:
     test_images = load_test_images()
     if test_images:
-        st.subheader("Or Choose a Test Image:")
+        st.subheader("Or choose a test image:")
         cols = st.columns(3)
         for idx, (img_name, img) in enumerate(test_images.items()):
             with cols[idx]:
-                # Create a thumbnail of the image
+                # Create a copy of the image for the thumbnail
                 thumbnail = img.copy()
-                thumbnail.thumbnail((int(img.width * 0.3), int(img.height * 0.3)))  # 30% of original size
-                # Display the thumbnail
+                thumbnail.thumbnail((int(img.width * 0.3), int(img.height * 0.3)))  # 30% of the original size
+                # Display the image as a thumbnail
                 st.image(thumbnail, use_column_width=False, clamp=True)
                 # Make the image clickable using a button below
-                # Assign a unique key to each button to avoid duplication
+                # Assign a unique key to each button to avoid duplications
                 st.button(f"Select {img_name}", key=f"select_test_{img_name}", on_click=select_test_image, args=(img_name,))
 else:
-    # If an image is uploaded or selected, hide test images
+    # If an image has been uploaded or selected, hide the test images
     pass
-
-# Definition of segment names
-segment_number_to_name = {
-    '1': 'RCA proximal',
-    '2': 'RCA mid',
-    '3': 'RCA distal',
-    '4': 'Posterior descending',
-    '5': 'Left main',
-    '6': 'LAD proximal',
-    '7': 'LAD mid',
-    '8': 'LAD apical',
-    '9': 'First diagonal',
-    '9a': 'First diagonal a',
-    '10': 'Second diagonal',
-    '10a': 'Second diagonal a',
-    '11': 'Proximal circumflex',
-    '12': 'Intermediate/anterolateral',
-    '12a': 'Obtuse marginal a',
-    '12b': 'Obtuse marginal b',
-    '13': 'Distal circumflex',
-    '14': 'Left posterolateral',
-    '14a': 'Left posterolateral a',
-    '14b': 'Left posterolateral b',
-    '15': 'Posterior descending',
-    '16': 'Posterolateral from RCA',
-    '16a': 'Posterolateral from RCA a',
-    '16b': 'Posterolateral from RCA b',
-    '16c': 'Posterolateral from RCA c',
-}
 
 # Process the image if available
 if image_to_process is not None:
@@ -141,210 +106,141 @@ if image_to_process is not None:
         col_masks, col_original = st.columns(2)
 
         with col_masks:
-            st.subheader("Stenosis and Segment Masks")
-            # Perform inference with both models
+            st.subheader("Stenosis masks")
+            # Perform inference
             with st.spinner('Processing...'):
-                results_stenosis = model_stenosis.predict(source=image_np, conf=threshold, save=False, task='segment')
-                results_segments = model_segments.predict(source=image_np, conf=threshold, save=False, task='segment')
+                results = model.predict(source=image_np, conf=threshold, save=False)
 
             # Process results
-            if results_stenosis and results_segments:
-                result_stenosis = results_stenosis[0]  # Assuming only one image is processed
-                result_segments = results_segments[0]
+            if results:
+                result = results[0]  # Assuming only one image is processed
+                if result.masks is not None and len(result.masks.data) > 0:
+                    masks = result.masks.data.cpu().numpy()  # (num_masks, height, width)
+                    confidences = result.boxes.conf.cpu().numpy()  # Probabilities
+                    classes = result.boxes.cls.cpu().numpy().astype(int)
+                    names = model.names  # Class names
 
-                if (result_stenosis.masks is not None and len(result_stenosis.masks.data) > 0 and
-                    result_segments.masks is not None and len(result_segments.masks.data) > 0):
-
-                    # Extract masks and classes
-                    masks_stenosis = result_stenosis.masks.data.cpu().numpy()  # (num_masks, height, width)
-                    confidences_stenosis = result_stenosis.boxes.conf.cpu().numpy()  # Confidences
-                    classes_stenosis = result_stenosis.boxes.cls.cpu().numpy().astype(int)
-                    names_stenosis = model_stenosis.names  # Class names
-
-                    masks_segments = result_segments.masks.data.cpu().numpy()
-                    confidences_segments = result_segments.boxes.conf.cpu().numpy()
-                    classes_segments = result_segments.boxes.cls.cpu().numpy().astype(int)
-                    names_segments = model_segments.names
-
-                    # Assign unique colors to each stenosis mask
-                    color_palette_stenosis = [
+                    # Assign unique colors to each mask using a predefined palette
+                    color_palette = [
                         (255, 0, 0),      # Red
-                        (255, 165, 0),    # Orange
-                        (255, 255, 0),    # Yellow
-                        (255, 69, 0),     # Orange Red
-                        (255, 215, 0),    # Gold
-                        (255, 99, 71),    # Tomato
-                        (255, 140, 0),    # Dark Orange
-                        (255, 127, 80),    # Coral
-                        (255, 105, 180),  # Hot Pink
-                        (255, 20, 147),    # Deep Pink
-                        (255, 0, 255),    # Magenta
-                        (238, 130, 238),  # Violet
-                    ]
-                    color_cycle_stenosis = itertools.cycle(color_palette_stenosis)
-
-                    mask_colors_stenosis = {}
-                    for idx_mask in range(len(masks_stenosis)):
-                        mask_colors_stenosis[idx_mask] = next(color_cycle_stenosis)
-
-                    # Assign unique colors to each segment mask
-                    color_palette_segments = [
-                        (0, 0, 255),      # Blue
                         (0, 255, 0),      # Green
+                        (0, 0, 255),      # Blue
+                        (255, 255, 0),    # Yellow
+                        (255, 0, 255),    # Magenta
                         (0, 255, 255),    # Cyan
-                        (138, 43, 226),   # Blue Violet
-                        (75, 0, 130),     # Indigo
-                        (0, 128, 128),    # Teal
-                        (34, 139, 34),    # Forest Green
-                        (255, 182, 193),  # Light Pink
-                        (173, 216, 230),  # Light Blue
-                        (0, 100, 0),      # Dark Green
+                        (128, 0, 0),      # Maroon
+                        (0, 128, 0),      # Dark Green
+                        (0, 0, 128),      # Dark Blue
+                        (128, 128, 0),    # Olive
                         (128, 0, 128),    # Purple
-                        (255, 0, 0),      # Red (may overlap, adjust if necessary)
+                        (0, 128, 128),    # Teal
                     ]
-                    color_cycle_segments = itertools.cycle(color_palette_segments)
+                    color_cycle = itertools.cycle(color_palette)
 
-                    mask_colors_segments = {}
-                    for idx_mask in range(len(masks_segments)):
-                        mask_colors_segments[idx_mask] = next(color_cycle_segments)
+                    # Assign colors to each mask and store them for consistency
+                    mask_colors = {}
+                    for idx_mask in range(len(masks)):
+                        mask_colors[idx_mask] = next(color_cycle)
 
-                    # Create a copy of the original image to overlay masks
-                    img_with_masks = image_np.copy()
+                    # Create a blank image for the masks
+                    mask_image = np.zeros_like(image_np, dtype=np.uint8)
 
-                    # List to store stenosis mask information
-                    stenosis_info_list = []
+                    # Create a matrix to track which mask is assigned to each pixel
+                    mask_indices = np.full((image_np.shape[0], image_np.shape[1]), -1, dtype=int)
 
-                    # Preprocess all stenoses to get segmentation information
-                    stenosis_overlaps = []
+                    # List to store mask information
+                    mask_info_list = []
 
-                    for idx_stenosis, (cls, conf) in enumerate(zip(classes_stenosis, confidences_stenosis)):
-                        mask_stenosis = masks_stenosis[idx_stenosis]
-                        mask_stenosis_resized = cv2.resize(mask_stenosis, (image_np.shape[1], image_np.shape[0]), interpolation=cv2.INTER_NEAREST)
+                    # Sidebar to select masks with color indication
+                    st.sidebar.subheader("Select masks to display")
 
-                        # Determine overlapping segments
-                        overlapping_segments = set()
-                        for idx_segment, mask_segment in enumerate(masks_segments):
-                            mask_segment_resized = cv2.resize(mask_segment, (image_np.shape[1], image_np.shape[0]), interpolation=cv2.INTER_NEAREST)
-                            # Calculate overlap
-                            intersection = np.logical_and(mask_stenosis_resized > 0.5, mask_segment_resized > 0.5)
-                            if np.any(intersection):
-                                class_segment = classes_segments[idx_segment]
-                                segment_number = names_segments[class_segment]
-                                segment_name = segment_number_to_name.get(segment_number, 'Unknown')
-                                overlapping_segments.add(segment_name)
-
-                        stenosis_overlaps.append(overlapping_segments)
-
-                    # Sidebar section for Localized Stenosis
-                    st.sidebar.subheader("Localized Stenosis")
-
-                    for idx_stenosis, (cls, conf) in enumerate(zip(classes_stenosis, confidences_stenosis)):
-                        color_rgb = mask_colors_stenosis[idx_stenosis]
+                    # Use columns to display color and checkbox side by side
+                    for idx_mask, (cls, conf) in enumerate(zip(classes, confidences)):
+                        color_rgb = mask_colors[idx_mask]
                         color_hex = '#%02x%02x%02x' % color_rgb
                         # Create a small color box using markdown
                         color_box = f'<div style="width: 15px; height: 15px; background-color: {color_hex}; display: inline-block; margin-right: 5px;"></div>'
-                        overlapping_segments = stenosis_overlaps[idx_stenosis]
-                        # Format overlapping segments
-                        if overlapping_segments:
-                            segments_str = ', '.join(overlapping_segments)
-                        else:
-                            segments_str = 'N/A'
-                        # Format the label
-                        label = f"{segments_str} (Confidence: {conf:.2f})"
-                        # Create columns for color and checkbox
+                        label = f"{names[cls]} - Confidence: {conf:.2f}"
+                        # Create one column for the color and another for the checkbox
                         col_color, col_checkbox = st.sidebar.columns([1, 10])
                         with col_color:
                             st.markdown(color_box, unsafe_allow_html=True)
                         with col_checkbox:
                             # Use a unique key for each checkbox
-                            mask_selection = st.checkbox(label, value=True, key=f"mask_checkbox_{idx_stenosis}")
+                            mask_selection = st.checkbox(label, value=True, key=f"mask_checkbox_{idx_mask}")
 
+                        # Save the selection state
                         if mask_selection:
-                            # Process the stenosis mask
-                            mask_stenosis = masks_stenosis[idx_stenosis]
-                            mask_stenosis_resized = cv2.resize(mask_stenosis, (image_np.shape[1], image_np.shape[0]), interpolation=cv2.INTER_NEAREST)
+                            # Process the mask
+                            mask_resized = cv2.resize(masks[idx_mask], (image_np.shape[1], image_np.shape[0]), interpolation=cv2.INTER_LINEAR)
+                            mask_uint8 = (mask_resized * 255).astype(np.uint8)
+                            blurred_mask = cv2.GaussianBlur(mask_uint8, (7, 7), 0)
+                            mask_smoothed = blurred_mask.astype(np.float32) / 255.0
 
-                            # Overlay the stenosis mask on the image
-                            color_mask = np.zeros_like(image_np)
-                            color_mask[mask_stenosis_resized > 0.5] = color_rgb
-                            img_with_masks = cv2.addWeighted(img_with_masks, 1.0, color_mask, transparency_stenosis, 0)
+                            mask_bool = mask_smoothed > 0.3  # Threshold to binarize
+                            update_mask = np.logical_and(mask_bool, mask_indices == -1)
+                            if not np.any(update_mask):
+                                continue
 
-                            # Store the information
-                            # Assuming each stenosis corresponds to at least one segment
-                            stenosis_class = list(overlapping_segments)[0] if overlapping_segments else 'N/A'
-                            stenosis_info = {
-                                'stenosis_index': idx_stenosis,
-                                'stenosis_class': stenosis_class,
-                                'stenosis_confidence': conf,
-                                'overlapping_segments_names': overlapping_segments,
+                            mask_indices[update_mask] = idx_mask
+
+                            # Get the color assigned to the mask
+                            color_rgb_np = np.array(color_rgb, dtype=np.uint8)  # RGB
+                            # Assign colors to the corresponding pixels
+                            mask_image[update_mask] = color_rgb_np
+
+                            # Store mask information
+                            mask_info = {
+                                'mask_index': idx_mask,
+                                'class': names[cls],
+                                'confidence': conf,
                                 'color_rgb': color_rgb,
                             }
-                            stenosis_info_list.append(stenosis_info)
+                            mask_info_list.append(mask_info)
 
-                    # Sidebar section for Identified Segments
-                    st.sidebar.subheader("Identified Segments")
+                    # Overlay the mask image on the original image
+                    # Convert mask_image to float32 and scale to [0,1]
+                    mask_image_float = mask_image.astype(np.float32) / 255.0
+                    # Multiply by transparency
+                    mask_image_transparent = mask_image_float * transparency
+                    # Convert image_np to float32 and scale to [0,1]
+                    image_float = image_np.astype(np.float32) / 255.0
+                    # Overlay
+                    img_with_masks = image_float + mask_image_transparent
+                    # Clip to [0,1] and convert back to uint8
+                    img_with_masks = np.clip(img_with_masks, 0, 1) * 255
+                    img_with_masks = img_with_masks.astype(np.uint8)
 
-                    for idx_segment, (cls_seg, conf_seg) in enumerate(zip(classes_segments, confidences_segments)):
-                        color_rgb_seg = mask_colors_segments[idx_segment]
-                        color_hex_seg = '#%02x%02x%02x' % color_rgb_seg
-                        # Create a small contour box using CSS
-                        color_box_seg = f'''
-                            <div style="
-                                width: 15px; 
-                                height: 15px; 
-                                border: 2px solid {color_hex_seg}; 
-                                background-color: transparent; 
-                                display: inline-block; 
-                                margin-right: 5px;">
-                            </div>
-                        '''
-                        segment_number = names_segments[cls_seg]
-                        segment_description = segment_number_to_name.get(segment_number, 'Unknown')
-                        label_seg = f"◻️ {segment_description} (Confidence: {conf_seg:.2f})"
-                        # Create columns for contour and checkbox
-                        col_color_seg, col_checkbox_seg = st.sidebar.columns([1, 10])
-                        with col_color_seg:
-                            st.markdown(color_box_seg, unsafe_allow_html=True)
-                        with col_checkbox_seg:
-                            # Use a unique key for each checkbox and keep them unchecked by default
-                            mask_selection_seg = st.checkbox(label_seg, value=False, key=f"mask_checkbox_seg_{idx_segment}")
-
-                        if mask_selection_seg:
-                            # Process the segment mask
-                            mask_segment = masks_segments[idx_segment]
-                            mask_segment_resized = cv2.resize(mask_segment, (image_np.shape[1], image_np.shape[0]), interpolation=cv2.INTER_NEAREST)
-
-                            # Find contours of the mask
-                            mask_uint8 = (mask_segment_resized > 0.5).astype(np.uint8) * 255
-                            contours, _ = cv2.findContours(mask_uint8, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-                            # Draw finer contours on the image
-                            cv2.drawContours(img_with_masks, contours, -1, color_rgb_seg, 1)  # Thickness = 1
-
-                    # Display the image with masks
+                    # Display the image with masks (RGB)
                     st.image(img_with_masks, use_column_width=True, clamp=True)
 
-                    # Display stenosis and segments information
-                    st.subheader("Stenosis and Segments Results")
-                    for info in stenosis_info_list:
-                        color_rgb = info['color_rgb']
-                        color_hex = '#%02x%02x%02x' % color_rgb
-                        color_box = f'<div style="width: 15px; height: 15px; background-color: {color_hex}; display: inline-block; margin-right: 5px;"></div>'
-                        st.markdown(f"{color_box} **{info['stenosis_class']}**", unsafe_allow_html=True)
-                        st.write(f"  Confidence: {info['stenosis_confidence']:.2f}")
-                        if info['overlapping_segments_names']:
-                            segments_str = ', '.join(info['overlapping_segments_names'])
-                            st.write(f"  Segment(s): {segments_str}")
-                        else:
-                            st.write("  No overlapping segments detected.")
+                    # Create the legend
+                    if mask_info_list:
+                        legend_elements = []
+                        for mask_info in mask_info_list:
+                            color_rgb = mask_info['color_rgb']
+                            label = f"{mask_info['class']} - Confidence: {mask_info['confidence']:.2f}"
+                            legend_elements.append((color_rgb, label))
 
-                    if not stenosis_info_list:
-                        st.warning("No selected stenosis detected to display.")
-
+                        # Create a legend image
+                        legend_fig, legend_ax = plt.subplots(figsize=(6, len(legend_elements)*0.3))
+                        legend_ax.axis('off')
+                        for idx_leg, (color, label) in enumerate(legend_elements):
+                            # Reverse y-position to list top to bottom
+                            y_pos = len(legend_elements) - idx_leg -1
+                            # Convert color to float for Matplotlib
+                            color_normalized = np.array(color) / 255.0
+                            legend_ax.add_patch(Rectangle((0, y_pos*0.3), 0.2, 0.2, facecolor=color_normalized))
+                            legend_ax.text(0.25, y_pos*0.3 + 0.1, label, verticalalignment='center', fontsize=12)
+                        legend_buf = BytesIO()
+                        legend_fig.savefig(legend_buf, format="png", bbox_inches='tight')
+                        legend_buf.seek(0)
+                        st.image(legend_buf, caption="Legend", use_column_width=False)
+                        plt.close(legend_fig)
                 else:
-                    st.warning("No masks detected in this image.")
+                    st.warning("No results detected in the image.")
             else:
-                st.warning("No results detected in the image.")
+                st.warning("No masks detected in this image.")
     except Exception as e:
         st.error(f"An error occurred while processing the image: {e}")
 
